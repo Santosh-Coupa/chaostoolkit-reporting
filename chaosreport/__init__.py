@@ -306,8 +306,8 @@ def save_report(
         major, minor, _ = pandoc_version.split(".", 2)
         if int(major) == 2 and int(minor) < 19:
             extra_args.append("--self-contained")
-        else:
-            extra_args.append("--embed-resources")
+        #else:
+        #    extra_args.append("--embed-resources")
 
         extra_args.extend(
             [
