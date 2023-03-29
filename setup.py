@@ -7,7 +7,7 @@ import os
 
 import setuptools
 
-def get_version_from_package():
+def get_version_from_package() -> str:
     """
     Read the package version from the source without importing it.
     """
