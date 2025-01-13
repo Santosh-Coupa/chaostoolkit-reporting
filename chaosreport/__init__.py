@@ -2,6 +2,7 @@
 import io
 import itertools
 import json
+import logging
 import os
 import os.path
 import shlex
@@ -10,7 +11,8 @@ import subprocess
 import tempfile
 from base64 import b64encode
 from datetime import datetime, timedelta
-from typing import List
+from importlib.metadata import version, PackageNotFoundError
+from typing import Any, Dict, List
 
 import cairosvg
 import dateparser
@@ -20,10 +22,10 @@ import maya
 import pygal
 import pypandoc
 import semver
+from chaoslib import substitute
 from chaoslib.caching import cache_activities, lookup_activity
-from chaoslib.types import Experiment, Journal, Run
+from chaoslib.types import Configuration, Experiment, Journal, Run, Secrets
 from jinja2 import Environment, PackageLoader
-from logzero import logger
 from natural import date
 from pygal.style import DefaultStyle, LightColorizedStyle
 
@@ -33,7 +35,12 @@ __all__ = [
     "generate_report_header",
     "save_report",
 ]
-__version__ = "0.14.1"
+try:
+    __version__ = version("chaostoolkit-reporting")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
+logger = logging.getLogger("chaostoolkit")
 
 curdir = os.getcwd()
 basedir = os.path.dirname(__file__)
@@ -42,12 +49,14 @@ js_dir = os.path.join(basedir, "template", "js")
 
 
 def generate_report_header(
-    journal_paths: List[str], export_format: str = "markdown"
+    journal_paths: List[str],
+    export_format: str = "markdown",
+    title: str = None,
 ) -> str:
     header_template = get_report_template(None, "header.md")
 
     header_info = {}
-    header_info["title"] = "Chaos Engineering Report"
+    header_info["title"] = title or "Chaos Engineering Report"
     header_info["today"] = datetime.now().strftime("%d %B %Y")
     header_info["export_format"] = export_format
     tags = []
@@ -125,7 +134,7 @@ def generate_report_header(
         for title in experiment_titles:
             contributions[title] = [None] * number_of_contributions
 
-        for (title, level, contrib) in contributions_by_experiment:
+        for title, level, contrib in contributions_by_experiment:
             idx = contribution_labels.index(contrib)
             amount = 0
             if level == "high":
@@ -203,7 +212,7 @@ def generate_report_header(
         for tag in tags:
             contributions[tag] = [None] * number_of_contributions
 
-        for (tag, level, contrib) in contributions_by_tag:
+        for tag, level, contrib in contributions_by_tag:
             idx = contribution_labels.index(contrib)
             amount = 0
             if level == "high":
@@ -244,16 +253,18 @@ def generate_report_header(
     return header
 
 
-def generate_report(journal_path: str, export_format: str = "markdown") -> str:
+def generate_report(
+    journal: Dict[str, Any],
+    export_format: str = "markdown",
+    config: Configuration = None,
+    secrets: Secrets = None,
+) -> str:
     """
     Generate a report document from a chaostoolkit journal.
 
     The report is first generated from the markdown template and converted to
     the desired format using Pandoc.
     """
-    with io.open(journal_path) as fp:
-        journal = json.load(fp)
-
     # inject some pre-processed values into the journal for rendering
     experiment = journal["experiment"]
     cache_activities(experiment)
@@ -267,7 +278,9 @@ def generate_report(journal_path: str, export_format: str = "markdown") -> str:
 
     generate_chart_from_metric_probes(journal, export_format)
     add_contribution_model(journal, export_format)
-    template = get_report_template(journal["chaoslib-version"])
+    template = get_report_template(
+        journal["chaoslib-version"], configuration=config, secrets=secrets
+    )
     report = template.render(journal)
 
     return report
@@ -303,7 +316,7 @@ def save_report(
         extra_args = []
 
         pandoc_version = pypandoc.get_pandoc_version()
-        major, minor, _ = pandoc_version.split(".", 2)
+        major, minor = pandoc_version.split(".")[0:2]
         if int(major) == 2 and int(minor) < 19:
             extra_args.append("--self-contained")
         #else:
@@ -333,7 +346,10 @@ def save_report(
 
 
 def get_report_template(
-    report_version: str, default_template: str = "index.md"
+    report_version: str,
+    default_template: str = "index.md",
+    configuration: Configuration = None,
+    secrets: Secrets = None,
 ):
     """
     Retrieve and return the most appropriate template based on the
@@ -346,6 +362,23 @@ def get_report_template(
     env.globals["pretty_duration"] = lambda d0, d1: date.delta(
         dateparser.parse(d0), dateparser.parse(d1), words=False
     )[0]
+
+    def substitution(args, is_tolerance: bool = False) -> Any:
+        if is_tolerance:
+            if isinstance(args, dict):
+                if args.get("type") == "probe":
+                    args = args.get("provider", {}).get("arguments")
+                    args.pop("value", None)
+
+        if isinstance(args, dict):
+            return {
+                k: substitute(v, configuration, secrets)
+                for k, v in args.items()
+            }
+
+        return substitute(args, configuration, secrets)
+
+    env.globals["substitute"] = substitution
 
     if not report_version:
         return env.get_template(default_template)
@@ -362,10 +395,16 @@ def get_report_template(
     templates = sorted(templates, key=lambda vinfo: vinfo[0])
 
     report_version = report_version.replace("rc1", "-rc1")
-    for (vinfo, name) in templates:
+    for vinfo, name in templates:
+        # deal with change of API
+        try:
+            v_kwargs = vinfo._asdict()
+        except AttributeError:
+            v_kwargs = vinfo.to_dict()
+
         if semver.match(
             report_version,
-            "<={v}".format(v=semver.format_version(**vinfo._asdict())),
+            "<={v}".format(v=semver.format_version(**v_kwargs)),
         ):
             return env.get_template(name)
 
@@ -411,7 +450,6 @@ def generate_chart_from_prometheus(run: Run, export_format: str):
     if data:
         result_type = data.get("resultType")
         if result_type == "matrix":
-
             chart = pygal.Line(
                 x_label_rotation=20,
                 style=DefaultStyle,
@@ -632,9 +670,7 @@ def generate_from_vegeta_result(run: Run, export_format: str):
                 run["charts"] = []
 
             if export_format in ["html", "html5"]:
-                run["charts"].append(
-                    chart.render(disable_xml_declaration=True)
-                )  # noqa
+                run["charts"].append(chart.render(disable_xml_declaration=True))  # noqa
             else:
                 run["charts"].append(
                     b64encode(
@@ -657,7 +693,7 @@ def add_contribution_model(journal: Journal, export_format: str):
 
     chart = pygal.Pie()
     chart.title = "Organization Contributions Impact"
-    for (contribution, impact) in contributions.items():
+    for contribution, impact in contributions.items():
         value = 0
         if impact == "high":
             value = 1

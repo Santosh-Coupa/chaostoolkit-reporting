@@ -2,7 +2,78 @@
 
 ## [Unreleased][]
 
-[Unreleased]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.14.1...HEAD
+[Unreleased]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.18.0...HEAD
+
+## [0.18.0][] - 2024-12-02
+
+[0.18.0]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.17.2...0.18.0
+
+### Changed
+
+- Refactor the build toolchain to use PDM instead of pip
+- Requires now Python 3.10 at minimum due to numpy undirect dependency
+
+## [0.17.2][] - 2024-12-02
+
+[0.17.2]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.17.1...0.17.2
+
+### Fixed
+
+- Parsing of the pandoc version
+
+## [0.17.1][] - 2024-01-14
+
+[0.17.1]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.17.0...0.17.1
+
+### Fixed
+
+- Ensure `--title` takes precedence when set. Thanks to @mcastellin for
+  investigating
+
+## [0.17.0][] - 2024-01-05
+
+[0.17.0]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.16.0...0.17.0
+
+### Added
+
+- The `--title` option to the `report` command so you can force the title
+  in the report header
+
+## [0.16.0][] - 2023-12-05
+
+[0.16.0]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.15.0...0.16.0
+
+### Added
+
+- Extended support for substituoon to tolerance and pauses properties
+
+## [0.15.0][] - 2023-11-30
+
+[0.15.0]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.14.3...0.15.0
+
+### Added
+
+- Support to substitute values in arguments so we know how activities were
+  called. You can now pass `--var` and `--var-file` to generate the report
+  as you do when you run the experiment
+
+## [0.14.3][] - 2023-06-09
+
+[0.14.3]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.14.2...0.14.3
+
+### Fixed
+
+- Support for newer API change in `semver.VersionInfo` [#42][42]
+
+[#42]: https://github.com/chaostoolkit/chaostoolkit-reporting/issues/42
+
+## [0.14.2][] - 2023-02-27
+
+[0.14.2]: https://github.com/chaostoolkit/chaostoolkit-reporting/compare/0.14.1...0.14.2
+
+### Fixed
+
+- Python miniaml version pattern as per https://github.com/pypa/packaging/issues/673
 
 ## [0.14.1][] - 2022-12-08
 
